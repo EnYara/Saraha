@@ -60,24 +60,7 @@ import { emailEnum } from "../../common/utils/email/email.enum.js";
     );
   }
 
-  const otp = await generateOTP();
-
-  eventEmitter.emit(emailEnum.confirmEmail, async ({ email, otp, subject }) => {
-    await sendEmail({
-      to: email,
-      subject: "Welcome to Saraha App",
-      html: emailTemplate(otp),
-    });
-
-    await set({
-      key: otpKey({ email, subject }),
-      value: Hash({ plainText: `${otp}` }),
-      ttl: 60 * 2,
-    });
-
-    await incr(max_otpKey({ email }));
-    await expire(max_otpKey({ email }), 60 * 5); 
-  });
+  
 };
 
 export const signUp = async (req, res, next) => {
