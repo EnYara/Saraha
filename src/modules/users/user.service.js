@@ -51,7 +51,8 @@ import { emailEnum } from "../../common/utils/email/email.enum.js";
       { cause: 400 },
     );
   }
-  if ((await get(max_otpKey({ email }))) >= 3) {
+  const attempts = Number(await get(max_otpKey({ email })))||0;
+  if (attempts >= 3) {
     await set({ key: block_otpKey({ email }), value: 1, ttl: 60 });
     throw new Error(
       "you exceeded the maximum attempts, please try again later",
@@ -61,7 +62,7 @@ import { emailEnum } from "../../common/utils/email/email.enum.js";
 
   const otp = await generateOTP();
 
-  eventEmitter.on(emailEnum.confirmEmail, async ({ email, otp, subject }) => {
+  eventEmitter.emit(emailEnum.confirmEmail, async ({ email, otp, subject }) => {
     await sendEmail({
       to: email,
       subject: "Welcome to Saraha App",
@@ -75,7 +76,7 @@ import { emailEnum } from "../../common/utils/email/email.enum.js";
     });
 
     await incr(max_otpKey({ email }));
-    await expire(max_otpKey({ email }), 60 * 5); // 5 دقايق
+    await expire(max_otpKey({ email }), 60 * 5); 
   });
 };
 
@@ -131,7 +132,8 @@ export const signUp = async (req, res, next) => {
 export const confirmEmail = async (req, res, next) => {
   const { email, code } = req.body;
 
-  const otpExist = await get(otpKey({ email }));
+  const key = otpKey({ email, subject: emailEnum.confirmEmail });
+  const otpExist = await get(key);
 
   if (!otpExist) {
     throw new Error("OTP expired");
@@ -154,7 +156,7 @@ export const confirmEmail = async (req, res, next) => {
   if (!user) {
     throw new Error("user not exist");
   }
-  await deleteKey(otpKey({ email, subject: emailEnum.confirmEmail }));
+  await deleteKey(key);
 
   successResponse({ res, message: "Email confirmed successfully" });
 };
@@ -176,7 +178,7 @@ export const resendOTP = async (req, res, next) => {
 
   await sendEmailOtp({ email, subject: emailEnum.confirmEmail });
   await incr(max_otpKey({ email }));
-  await expire(max_otpKey({ email }), 60 * 5); // 5 دقايق
+  await expire(max_otpKey({ email }), 60 * 5); 
   successResponse({ res, message: "OTP resent successfully" });
 };
 
@@ -254,7 +256,6 @@ export const signIn = async (req, res, next) => {
   const accessToken = GenerateToken({
     payload: { id: user._id, email: user.email },
     secret_key: configService.AccessSecretKey,
-    // secret_key: user.role==roleEnum.user? configService.AccessSecretKey : "userSecretKey",
     options: {
       expiresIn: 60 * 3,
       jwtid,
@@ -285,7 +286,7 @@ export const forgetPassword = async (req, res, next) => {
     filter: {
       email,
       provider: providerEnum.system,
-      confirmed: { $exists: true },
+      confirmed: true,
     },
   });
   if (!user) {
@@ -318,7 +319,7 @@ export const resetPassword = async (req, res, next) => {
     filter: {
       email,
       provider: providerEnum.system,
-      confirmed: { $exists: true },
+      confirmed: true,
     },
 
     update : { password: Hash({ plainText: password }), changeCredential: new Date() }  
