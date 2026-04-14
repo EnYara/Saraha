@@ -7,12 +7,14 @@ import { validation } from "../../common/middleware/validation.js";
 import * as UV from "./user.validation.js";
 import { multer_host, multer_local } from "../../common/middleware/multer.js";
 import { multer_enum } from "../../common/enum/multer.enum.js";
-const userRouter = Router();
+import messageRouter from "../messages/message.controller.js";
+const userRouter = Router({caseSensitive: true, strict: true});
 
+userRouter.use("/:userId/messages", messageRouter);
 
 userRouter.post("/signup/gmail", US.signUpWithGemail);
 userRouter.patch("/confirm-email",validation(UV.confirmEmailSchema), US.confirmEmail);
-userRouter.post("/resend-otp",validation(UV.resendOtpSchema), US.resendOTP);
+userRouter.post("/resend-otp",validation(UV.resendOtpSchema), US.resendOtp);
 userRouter.post("/signin",validation(UV.signInSchema), US.signIn);
 userRouter.post("/refresh-token", US.refresh_token);
 userRouter.get("/profile", authentication, US.getProfile);

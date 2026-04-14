@@ -35,32 +35,46 @@ import { eventEmitter } from "../../common/utils/email/email.events.js";
 import { emailTemplate } from "../../common/utils/email/email.template.js";
 import { emailEnum } from "../../common/utils/email/email.enum.js";
 
- const sendEmailOtp = async ({ email, subject }) => {
+const sendEmailOtp = async ({ email, subject }) => {
+  // ✅ check block
   const isBlocked = await ttl(block_otpKey({ email }));
   if (isBlocked > 0) {
     throw new Error(
       `you are blocked, please try again after ${isBlocked} seconds`,
-      { cause: 400 },
+      { cause: 400 }
     );
   }
 
+  // ✅ check existing OTP
   const otpTTl = await ttl(otpKey({ email, subject }));
   if (otpTTl > 0) {
     throw new Error(
-      `your otp still valid ,please try again after ${otpTTl} seconds`,
-      { cause: 400 },
-    );
-  }
-  const attempts = Number(await get(max_otpKey({ email })))||0;
-  if (attempts >= 3) {
-    await set({ key: block_otpKey({ email }), value: 1, ttl: 60 });
-    throw new Error(
-      "you exceeded the maximum attempts, please try again later",
-      { cause: 400 },
+      `your otp still valid, please try again after ${otpTTl} seconds`,
+      { cause: 400 }
     );
   }
 
-  
+  // ✅ attempts
+  const attempts = Number(await get(max_otpKey({ email }))) || 0;
+
+  if (attempts >= 3) {
+    await set({
+      key: block_otpKey({ email }),
+      value: 1,
+      ttl: 60 * 5, // 🔥 5 دقايق
+    });
+
+    throw new Error(
+      "you exceeded the maximum attempts, please try again later",
+      { cause: 400 }
+    );
+  }
+
+  // ✅ generate OTP
+  const otp = await generateOTP();
+
+  // ✅ emit event (مش on)
+  eventEmitter.emit(emailEnum.confirmEmail, { email, otp, subject });
 };
 
 export const signUp = async (req, res, next) => {
@@ -115,14 +129,20 @@ export const signUp = async (req, res, next) => {
 export const confirmEmail = async (req, res, next) => {
   const { email, code } = req.body;
 
-  const key = otpKey({ email, subject: emailEnum.confirmEmail });
-  const otpExist = await get(key);
-
-  if (!otpExist) {
-    throw new Error("OTP expired");
+  if (!email || !code) {
+    throw new Error("Email and code are required", { cause: 400 });
   }
 
+  const key = otpKey({ email, subject: emailEnum.confirmEmail });
+
+  const otpExist = await get(key);
+  if (!otpExist) {
+    throw new Error("OTP expired", { cause: 400 });
+  }
+
+  // ❗ مهم: امسحي لو غلط
   if (!Compare({ plainText: code, cypherText: otpExist })) {
+    await deleteKey(key);
     throw new Error("Invalid OTP", { cause: 400 });
   }
 
@@ -130,39 +150,64 @@ export const confirmEmail = async (req, res, next) => {
     model: userModel,
     filter: {
       email,
-      confirmed: { $exists: false },
+      confirmed: {$exists: false },
       provider: providerEnum.system,
     },
     update: { confirmed: true },
   });
 
   if (!user) {
-    throw new Error("user not exist");
+    throw new Error("Invalid request", { cause: 400 });
   }
-  await deleteKey(key);
 
-  successResponse({ res, message: "Email confirmed successfully" });
+  // ✅ cleanup
+  await deleteKey(key);
+  await deleteKey(max_otpKey({ email }));
+
+  successResponse({
+    res,
+    message: "Email confirmed successfully",
+  });
 };
 
-export const resendOTP = async (req, res, next) => {
+export const resendOtp = async (req, res, next) => {
   const { email } = req.body;
 
-  const user = await db_service.findOne({
-    model: userModel,
-    filter: {
-      email,
-      confirmed: { $exists: false },
-      provider: providerEnum.system,
-    },
-  });
-  if (!user) {
-    throw new Error("user not exist or already confirmed");
+  const isBlocked = await ttl(block_otpKey({ email }));
+  if (isBlocked > 0) {
+    throw new Error(
+      `you are blocked, please try again after ${isBlocked} seconds`,
+      { cause: 400 }
+    );
   }
 
-  await sendEmailOtp({ email, subject: emailEnum.confirmEmail });
-  await incr(max_otpKey({ email }));
-  await expire(max_otpKey({ email }), 60 * 5); 
-  successResponse({ res, message: "OTP resent successfully" });
+  const otpTTl = await ttl(otpKey({ email, subject: emailEnum.confirmEmail }));
+  if (otpTTl > 0) {
+    throw new Error(
+      `your otp still valid, please try again after ${otpTTl} seconds`,
+      { cause: 400 }
+    );
+  }
+
+  const otp = await generateOTP();
+
+  // 🔥 resend بدون incr
+  await sendEmail({
+    to: email,
+    subject: "Resend OTP",
+    html: emailTemplate(otp),
+  });
+
+  await set({
+    key: otpKey({ email, subject: emailEnum.confirmEmail }),
+    value: Hash({ plainText: `${otp}` }),
+    ttl: 60 * 2,
+  });
+
+  successResponse({
+    res,
+    message: "OTP resent successfully",
+  });
 };
 
 export const signUpWithGemail = async (req, res, next) => {
@@ -224,7 +269,7 @@ export const signIn = async (req, res, next) => {
     filter: {
       email,
       provider: providerEnum.system,
-      confirmed: { $exists: true },
+      confirmed: true,
     },
   });
   if (!user) {
@@ -240,7 +285,7 @@ export const signIn = async (req, res, next) => {
     payload: { id: user._id, email: user.email },
     secret_key: configService.AccessSecretKey,
     options: {
-      expiresIn: 60 * 3,
+      expiresIn: "1day",
       jwtid,
     },
   });
@@ -273,7 +318,7 @@ export const forgetPassword = async (req, res, next) => {
     },
   });
   if (!user) {
-    throw new Error("user not exist", { cause: 400 });
+    throw new Error("If this email exists,an OTP has been sent to it", { cause: 400 });
   }
 
   await sendEmailOtp({ email, subject: emailEnum.forgetPassword });
@@ -292,11 +337,7 @@ export const resetPassword = async (req, res, next) => {
   if (!otpValue) {
     throw new Error("OTP expired");
   }
-
-  if (!Compare({ plainText: code, cypherText: otpValue })) {
-    throw new Error("Invalid OTP", { cause: 400 });
-  }
-
+  
   const user = await db_service.findOneAndUpdate({
     model: userModel,
     filter: {
@@ -311,7 +352,11 @@ export const resetPassword = async (req, res, next) => {
     throw new Error("user not exist", { cause: 400 });
   }
 
+if (!Compare({ plainText: code, cypherText: otpValue })) {
   await deleteKey(otpKey({ email, subject: emailEnum.forgetPassword }));
+  throw new Error("Invalid OTP");
+  }
+
   successResponse({
     res,
     message: "success",

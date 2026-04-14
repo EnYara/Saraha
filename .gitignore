@@ -3,3 +3,5 @@ config/.env.production
 social-login
 node_modules
 
+.env
+config/.env.*

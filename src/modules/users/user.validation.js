@@ -30,7 +30,6 @@ export const resetPasswordSchema = {
   }).required(),
 };
 
-
 export const resendOtpSchema = {
   body: Joi.object({
     email: general_rules.email.required(),

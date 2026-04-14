@@ -21,3 +21,4 @@ export const Prefix = process.env.PREFIX ;
 export const RedisURL = process.env.REDIS_URL ;
 export const EmailUser = process.env.EMAIL_USER ;
 export const EmailPass = process.env.EMAIL_PASS ;
+export const WhiteList = process.env.WHITE_LIST.split(",") || [] ;
