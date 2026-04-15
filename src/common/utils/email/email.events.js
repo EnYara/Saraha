@@ -2,8 +2,8 @@ import { EventEmitter } from "node:events";
 import { emailEnum } from "./email.enum.js";
 import { sendEmail } from "./send.email.js";
 import { emailTemplate } from "./email.template.js";
-import { set, incr, expire } from "../../../DB/redis/redis.service.js";
-
+import { set, incr, expire, otpKey, max_otpKey} from "../../../DB/redis/redis.service.js";
+import { Hash } from "../../utils/security/hash.security.js";
 export const eventEmitter = new EventEmitter();
 
 eventEmitter.on(emailEnum.confirmEmail, async ({ email, otp, subject }) => {
