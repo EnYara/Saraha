@@ -1,4 +1,4 @@
 /node_modules
 /config/.env.*
 /uploads
-/security/cloudinary.js
+/src/common/utils/cloudinary.js
