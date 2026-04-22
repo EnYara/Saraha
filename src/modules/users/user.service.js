@@ -61,7 +61,7 @@ const sendEmailOtp = async ({ email, subject }) => {
     await set({
       key: block_otpKey({ email }),
       value: 1,
-      ttl: 60 * 5, // 🔥 5 دقايق
+      ttl: 60 * 5, 
     });
 
     throw new Error(
@@ -73,7 +73,7 @@ const sendEmailOtp = async ({ email, subject }) => {
   // ✅ generate OTP
   const otp = await generateOTP();
 
-  // ✅ emit event (مش on)
+  // ✅ emit event 
   eventEmitter.emit(emailEnum.confirmEmail, { email, otp, subject });
 };
 
@@ -140,7 +140,6 @@ export const confirmEmail = async (req, res, next) => {
     throw new Error("OTP expired", { cause: 400 });
   }
 
-  // ❗ مهم: امسحي لو غلط
   if (!Compare({ plainText: code, cypherText: otpExist })) {
     await deleteKey(key);
     throw new Error("Invalid OTP", { cause: 400 });
@@ -191,7 +190,6 @@ export const resendOtp = async (req, res, next) => {
 
   const otp = await generateOTP();
 
-  // 🔥 resend بدون incr
   await sendEmail({
     to: email,
     subject: "Resend OTP",
